@@ -8,3 +8,6 @@ venv/
 # Python cache etc
 __pycache__/
 *.pyc
+
+# .log files
+*.log
