@@ -1,19 +1,16 @@
 """
-TU Delft TimeEdit – Room Availability Checker & Auto-Reserver
+TU Delft Library - Room Availability Checker & Auto-Reserver
 =============================================================
-Scans every weekday in the next 14 days, finds free blocks (09:00–17:00)
+Scans every weekday in the next 14 days, finds free blocks (09:00-17:00)
 per room, prefers Australia > Europe > South America > other rooms,
 then reserves slots respecting:
-  - Minimum block: 1h45m (105 min)
-  - Maximum per reservation: 3h (180 min)
-  - Maximum total per session: 6h (360 min)
-
-Usage:
-    python timeedit_reserve.py
+  - Minimum block
+  - Maximum per reservation
+  - Maximum total per session
 
 Environment variables (via .env):
-    USERNAME_NETID   – your NetID username
-    PASSWORD_NETID   – your NetID password
+    USERNAME_NETID   - your NetID username
+    PASSWORD_NETID   - your NetID password
 """
 
 import logging
@@ -29,7 +26,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, WebDriverException
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# = Config ==================================
 PREFERRED_ROOMS   = ["Australia", "Europe", "South America"]
 DISLIKED_ROOMS = ["Albert Einstein", "Steve Jobs", "Gertrude Stein"]
 WINDOW_START      = "09:30"
@@ -40,7 +37,7 @@ MAX_PER_RES_MIN   = 180   # 3h
 SESSION_CAP_MIN   = 360   # 6h per run
 BASE_URL          = "https://cloud.timeedit.net/nl_tudelft/web/student/"
 
-# ── Logging ───────────────────────────────────────────────────────────────────
+# = Logging =================================─
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(message)s",
@@ -52,7 +49,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ── Time helpers ──────────────────────────────────────────────────────────────
+# = Time helpers ===============================
 def _t(s: str) -> int:
     h, m = map(int, s.split(":"))
     return h * 60 + m
@@ -63,7 +60,7 @@ def _s(minutes: int) -> str:
 WIN_START_MIN = _t(WINDOW_START)
 WIN_END_MIN   = _t(WINDOW_END)
 
-# ── Data structures ───────────────────────────────────────────────────────────
+# = Data structures =============================─
 @dataclass
 class FreeBlock:
     room_name: str
@@ -79,7 +76,7 @@ class FreeBlock:
     def __str__(self):
         return (
             f"{self.room_name} | {self.day.isoformat()} | "
-            f"{self.start}–{self.end} ({self.duration_minutes} min)"
+            f"{self.start}-{self.end} ({self.duration_minutes} min)"
         )
 
 
@@ -111,7 +108,7 @@ def split_into_reservations(block: FreeBlock, remaining_cap: int) -> list[FreeBl
     return chunks
 
 
-# ── Preference scoring ────────────────────────────────────────────────────────
+# = Preference scoring ============================
 def preference_score(block: FreeBlock) -> tuple:
     """
     Sort Order:
@@ -143,7 +140,7 @@ def preference_score(block: FreeBlock) -> tuple:
     return (day_val, tier, time_val, -block.duration_minutes)
 
 
-# ── Driver helpers ────────────────────────────────────────────────────────────
+# = Driver helpers ==============================
 def make_driver() -> webdriver.Chrome:
     options = webdriver.ChromeOptions()
     options.add_argument("--window-size=1400,900")
@@ -177,7 +174,7 @@ def navigate_to_reserve(driver) -> None:
     log.info("On reservation page.")
 
 
-# ── Calendar ──────────────────────────────────────────────────────────────────
+# = Calendar =================================
 def _datepicker_visible(driver) -> bool:
     try:
         return driver.find_element(By.ID, "ui-datepicker-div").is_displayed()
@@ -219,7 +216,7 @@ def select_date_on_calendar(driver, target: date) -> bool:
         return False
 
 
-# ── CSS geometry helpers ──────────────────────────────────────────────────────
+# = CSS geometry helpers ===========================
 def _css_pct(style: str, prop: str) -> float | None:
     """Extract a percentage value from an inline style string, e.g. 'left: 12.5%' → 12.5."""
     import re
@@ -247,30 +244,7 @@ def _slot_times_from_css(style: str, first_hour: int, day_hours: int) -> tuple[i
     return start_min, end_min
 
 
-# ── Room-name lookup from the weekDiv siblings ────────────────────────────────
-def _build_room_name_map(driver) -> dict:
-    """
-    Returns {top_pixel_value: {"id": obj_id, "name": name}}
-    """
-    mapping = {}
-    # Find all room labels on the left
-    room_elems = driver.find_elements(By.CSS_SELECTOR, "a.boxlink.hour")
-    
-    # In TimeEdit, rooms are usually 40px or 42px tall.
-    # We find the 'top' style of the row or calculate it by index.
-    for i, elem in enumerate(room_elems):
-        name = elem.find_element(By.CLASS_NAME, "objbase").text.strip()
-        onclick = elem.get_attribute("onclick") or ""
-        obj_id = re.search(r"openObject\(([\d.]+)", onclick).group(1)
-        
-        # Calculation: Usually, Room 0 is top: 0px, Room 1 is top: 40px, etc.
-        # It's safer to get the actual style if available, but index * 40 is common.
-        top_value = i * 40 
-        mapping[top_value] = {"id": obj_id, "name": name}
-    return mapping
-
-
-# ── Slot scraping ─────────────────────────────────────────────────────────────
+# = Slot scraping ==============================─
 def scrape_free_slots_for_day(driver, target: date) -> list[FreeBlock]:
     free_blocks: list[FreeBlock] = []
     try:
@@ -344,7 +318,7 @@ def scrape_free_slots_for_day(driver, target: date) -> list[FreeBlock]:
     return free_blocks
 
 
-# ── Reservation ───────────────────────────────────────────────────────────────
+# = Reservation ===============================─
 def _get_available_values(select_elem) -> list[str]:
     return [o.get_attribute("value") for o in Select(select_elem).options]
 
@@ -392,7 +366,7 @@ def reserve_block(driver, block: FreeBlock) -> int:
         time.sleep(0.2)
         _js_click(driver, slot_to_click)
 
-        # ── Start time ────────────────────────────────────────────────────────
+        # = Start time ============================
         start_sel_elem = wait.until(EC.visibility_of_element_located(
             (By.CSS_SELECTOR, "form#reserveformedit select.timeslotStart")
         ))
@@ -403,7 +377,7 @@ def reserve_block(driver, block: FreeBlock) -> int:
         if start_val != block.start:
             log.info(f"  Start adjusted: {block.start} → {start_val}")
 
-        # ── End time (wait for options to populate after start change) ─────────
+        # = End time (wait for options to populate after start change) ====─
         time.sleep(0.6)
         wait.until(lambda d: len(Select(
             d.find_element(By.CSS_SELECTOR, "form#reserveformedit select.timeslotEnd")
@@ -445,7 +419,7 @@ def reserve_block(driver, block: FreeBlock) -> int:
         except Exception:
             pass  # no alert = success
 
-        log.info(f"✅ Reserved: {block.room_name} {block.day} {start_val}–{end_val}")
+        log.info(f"✅ Reserved: {block.room_name} {block.day} {start_val}-{end_val}")
         return 0
 
     except (TimeoutException, NoSuchElementException, WebDriverException) as e:
@@ -458,7 +432,7 @@ def reserve_block(driver, block: FreeBlock) -> int:
         return 1
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# = Main ===================================
 def weekdays_in_next_n_days(n: int) -> list[date]:
     today = date.today()
     return [
@@ -487,7 +461,7 @@ def main():
         target_days = weekdays_in_next_n_days(LOOKAHEAD_DAYS)
         log.info(f"Scanning {len(target_days)} weekdays: {target_days[0]} → {target_days[-1]}")
 
-        # ── Scan phase ────────────────────────────────────────────────────────
+        # = Scan phase ============================
         for day in target_days:
             log.info(f"--- {day.strftime('%a %d %b')} ---")
             if not select_date_on_calendar(driver, day):
@@ -505,7 +479,7 @@ def main():
             log.warning("No suitable free blocks found. Nothing to reserve.")
             return
 
-        # ── Reserve phase: live rescrape after each attempt ─────────────────
+        # = Reserve phase: live rescrape after each attempt ========─
         # After every reservation attempt (success or failure) we re-scrape
         # the affected day so we only ever act on fresh server state.
         # All rooms are candidates; preference_score() orders them.
